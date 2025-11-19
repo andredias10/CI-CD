@@ -13,42 +13,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      # 2. Install clang-format
       - name: Install clang-format
         run: |
           sudo apt update
           sudo apt install -y clang-format
 
-      # 3. Setup reviewdog CLI
       - name: Setup reviewdog
         uses: reviewdog/action-setup@v1
         with:
           version: latest
 
-      # 4. Run clang-format and post suggestions
-      - name: Run clang-format and reviewdog
+      - name: Run clang-format-diff and reviewdog
         run: |
           git fetch origin ${{ github.base_ref }} --depth=1
 
-          # Find changed C/C++ files in PR
-          FILES=$(git diff --name-only origin/${{ github.base_ref }} -- '*.c' '*.cpp' '*.h' '*.hpp')
-          if [ -z "$FILES" ]; then
-            echo "✔ No C/C++ files changed."
-            exit 0
-          fi
+          # Get list of changed files in PR
+          git diff origin/${{ github.base_ref }} -- '*.c' '*.cpp' '*.h' '*.hpp' > pr.diff || true
 
-          # Generate clang-format diff
-          for f in $FILES; do
-            clang-format -style=file "$f" | diff -u "$f" - || true
-          done > clang_diff.patch || true
+          # Generate clang-format patch for changed lines
+          python3 - <<'EOF'
+import subprocess
+import sys
 
-          # Post suggestions to PR
+with open('pr.diff', 'r') as f:
+    diff = f.read()
+
+p = subprocess.Popen(
+    ['clang-format-diff.py', '-p1', '-style=file'],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True
+)
+out, err = p.communicate(input=diff)
+if out:
+    with open('clang_diff.patch', 'w') as f:
+        f.write(out)
+EOF
+
+          # Post suggestions using reviewdog
           if [ -s clang_diff.patch ]; then
             cat clang_diff.patch | reviewdog -f=diff -name="clang-format" -reporter=github-pr-review -level=warning
           else
