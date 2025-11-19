@@ -1,64 +1,100 @@
-name: C/C++ Format Check
+name: Verificação de Formatação C/C++
 
 on:
   pull_request:
+    branches: [ main, develop ]
     paths:
-      - '**/*.c'
-      - '**/*.cpp'
-      - '**/*.h'
-      - '**/*.hpp'
+      - '**.c'
+      - '**.h'
+      - '**.cpp'
+      - '**.hpp'
 
 jobs:
   clang-format-check:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - name: Install clang-format
-        run: |
-          sudo apt update
-          sudo apt install -y clang-format
-
-      - name: Setup reviewdog
-        uses: reviewdog/action-setup@v1
-        with:
-          version: latest
-
-      - name: Run clang-format-diff and reviewdog
-        run: |
-          git fetch origin ${{ github.base_ref }} --depth=1
-
-          # Get list of changed files in PR
-          git diff origin/${{ github.base_ref }} -- '*.c' '*.cpp' '*.h' '*.hpp' > pr.diff || true
-
-          # Generate clang-format patch for changed lines
-          python3 - <<'EOF'
-import subprocess
-import sys
-
-with open('pr.diff', 'r') as f:
-    diff = f.read()
-
-p = subprocess.Popen(
-    ['clang-format-diff.py', '-p1', '-style=file'],
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True
-)
-out, err = p.communicate(input=diff)
-if out:
-    with open('clang_diff.patch', 'w') as f:
-        f.write(out)
-EOF
-
-          # Post suggestions using reviewdog
-          if [ -s clang_diff.patch ]; then
-            cat clang_diff.patch | reviewdog -f=diff -name="clang-format" -reporter=github-pr-review -level=warning
-          else
-            echo "✔ All changed files are properly formatted!"
+    - name: Checkout código
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Instalar clang-format
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format
+    
+    - name: Verificar formatação
+      id: format-check
+      run: |
+        # Encontra todos os arquivos C/C++ modificados no PR
+        FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(c|h|cpp|hpp)$' || true)
+        
+        if [ -z "$FILES" ]; then
+          echo "Nenhum arquivo C/C++ modificado"
+          exit 0
+        fi
+        
+        echo "Arquivos a verificar:"
+        echo "$FILES"
+        
+        # Verifica formatação
+        NEEDS_FORMAT=0
+        for file in $FILES; do
+          if [ -f "$file" ]; then
+            clang-format --style=file --dry-run --Werror "$file" 2>&1 || NEEDS_FORMAT=1
           fi
+        done
+        
+        if [ $NEEDS_FORMAT -eq 1 ]; then
+          echo "❌ Alguns arquivos precisam de formatação"
+          echo "needs_format=true" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "✅ Todos os arquivos estão corretamente formatados"
+          echo "needs_format=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Gerar diff de formatação
+      if: failure()
+      run: |
+        echo "## 📝 Sugestões de Formatação" > format-suggestions.md
+        echo "" >> format-suggestions.md
+        
+        FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(c|h|cpp|hpp)$' || true)
+        
+        for file in $FILES; do
+          if [ -f "$file" ]; then
+            echo "### \`$file\`" >> format-suggestions.md
+            echo "\`\`\`diff" >> format-suggestions.md
+            clang-format --style=file "$file" | diff -u "$file" - || true >> format-suggestions.md
+            echo "\`\`\`" >> format-suggestions.md
+            echo "" >> format-suggestions.md
+          fi
+        done
+    
+    - name: Comentar no PR com sugestões
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          let comment = '## ⚠️ Formatação de Código\n\n';
+          comment += 'O clang-format detectou problemas de formatação no seu código.\n\n';
+          comment += '### Como corrigir:\n\n';
+          comment += '```bash\n';
+          comment += '# Formatar todos os arquivos C/C++\n';
+          comment += 'clang-format -i **/*.{c,h,cpp,hpp}\n';
+          comment += '```\n\n';
+          
+          if (fs.existsSync('format-suggestions.md')) {
+            const suggestions = fs.readFileSync('format-suggestions.md', 'utf8');
+            comment += suggestions;
+          }
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
