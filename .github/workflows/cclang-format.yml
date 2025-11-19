@@ -33,18 +33,14 @@ jobs:
       # 4️⃣ Rodar clang-format + reviewdog
       - name: Run clang-format with reviewdog
         run: |
-          FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- '*.c' '*.cpp' '*.h' '*.hpp')
-          if [ -n "$FILES" ]; then
-            for f in $FILES; do
-              clang-format -style=file "$f" | reviewdog \
-                -f=diff \
-                -name="clang-format" \
-                -reporter=github-pr-review \
-                -level=warning
-            done
-          else
-            echo "No C/C++ files changed."
-          fi
+          FILES=$(git ls-files '*.c' '*.cpp' '*.h' '*.hpp')
+          for f in $FILES; do
+            clang-format -style=file "$f" | reviewdog \
+              -f=diff \
+              -name="clang-format" \
+              -reporter=github-pr-review \
+              -level=warning
+          done
         shell: bash
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
