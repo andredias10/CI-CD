@@ -9,41 +9,33 @@ on:
       - '**/*.hpp'
 
 jobs:
-  check-format:
+  clang-format-check:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      - name: Install clang-format
+      # 2. Install clang-format and reviewdog
+      - name: Install tools
         run: |
           sudo apt update
-          sudo apt install -y clang-format
+          sudo apt install -y clang-format python3-pip
+          pip install --upgrade pip
+          pip install reviewdog
 
-      - name: Run clang-format
+      # 3. Run clang-format on changed files and post suggestions
+      - name: Run clang-format and reviewdog
         run: |
-          FILES=$(git ls-files '*.c' '*.cpp' '*.h' '*.hpp')
-          for f in $FILES; do
-            cp "$f" "$f.bak"
-            clang-format -i "$f"
-          done
-
-      - name: Check diff
-        run: |
-          if ! git diff --quiet; then
-            echo "❌ Código não está formatado segundo clang-format."
-            exit 1
-          else
-            echo "✔ Tudo formatado!"
+          # Get list of changed C/C++ files in the PR
+          FILES=$(git diff --name-only origin/${{ github.base_ref }} -- '*.c' '*.cpp' '*.h' '*.hpp')
+          if [ -z "$FILES" ]; then
+            echo "✔ No C/C++ files changed."
+            exit 0
           fi
 
-      - name: Upload formatted files as suggestions
-        if: failure()
-        uses: reviewdog/action-suggester@v1
-        with:
-          tool_name: clang-format
-          fail_on_error: "false"
-          suggestion_file: "."
+          # Generate clang-format diff for changed files
+          git fetch origin ${{ github.base_ref }} --depth=1
