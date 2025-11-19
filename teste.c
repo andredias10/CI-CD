@@ -1,10 +1,13 @@
 #include <stdio.h>
 int main(){
-int x=10;
-if(x>5){
-printf("x is greater than 5\n");
+int a=5;int b=10;
+if(a>b){
+printf("a maior que b\n");
 }else{
-printf("x is 5 or less\n");
+printf("b maior ou igual a a\n");
+}
+for(int i=0;i<3;i++){
+printf("i=%d\n",i);
 }
 return 0;
 }
