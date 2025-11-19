@@ -22,54 +22,42 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha }}
     
     - name: Instalar clang-format
       run: |
         sudo apt-get update
         sudo apt-get install -y clang-format
+        clang-format --version
     
     - name: Verificar formatação e gerar sugestões
       id: format-check
       run: |
+        set -e
+        
         # Encontra todos os arquivos C/C++ modificados no PR
-        FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(c|h|cpp|hpp)
-    
-    - name: Comentar no PR
-      if: failure()
-      uses: marocchino/sticky-pull-request-comment@v2
-      with:
-        header: clang-format
-        recreate: true
-        message: |
-          ## ⚠️ Formatação de Código
-          
-          O clang-format detetou problemas de formatação no teu código.
-          
-          ### 🔧 Como corrigir automaticamente:
-          
-          **Formatar ficheiros específicos:**
-          ```bash
-          clang-format -i caminho/do/ficheiro.c
-          ```
-          
-          **Formatar todos os ficheiros C/C++:**
-          ```bash
-          find . -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
-          ```
-          
-          ---
-          
-          $(cat format-report.md 2>/dev/null || echo "Vê o **Job Summary** para detalhes das alterações.")
- || true)
+        echo "Base ref: ${{ github.event.pull_request.base.sha }}"
+        echo "Head ref: ${{ github.event.pull_request.head.sha }}"
+        
+        FILES=$(git diff --name-only --diff-filter=ACMR ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -E '\.(c|h|cpp|hpp)$' || true)
         
         if [ -z "$FILES" ]; then
-          echo "✅ Nenhum arquivo C/C++ modificado"
+          echo "✅ Nenhum arquivo C/C++ modificado no PR"
+          echo "## ✅ Formatação OK" >> $GITHUB_STEP_SUMMARY
+          echo "Nenhum arquivo C/C++ foi modificado neste PR." >> $GITHUB_STEP_SUMMARY
           exit 0
         fi
         
         echo "📁 Arquivos a verificar:"
         echo "$FILES"
         echo ""
+        
+        # Verifica se existe .clang-format
+        if [ ! -f ".clang-format" ]; then
+          echo "⚠️ Aviso: Ficheiro .clang-format não encontrado. A usar estilo padrão LLVM."
+          echo "BasedOnStyle: LLVM" > .clang-format
+          echo "IndentWidth: 4" >> .clang-format
+        fi
         
         # Verifica formatação e gera relatório
         NEEDS_FORMAT=0
@@ -80,13 +68,13 @@ jobs:
         
         for file in $FILES; do
           if [ -f "$file" ]; then
-            echo "Verificando: $file"
+            echo "🔍 Verificando: $file"
             
             # Cria arquivo temporário com código formatado
             clang-format --style=file "$file" > "${file}.formatted"
             
             # Compara com original
-            if ! diff -q "$file" "${file}.formatted" > /dev/null 2>&1; then
+            if ! cmp -s "$file" "${file}.formatted"; then
               NEEDS_FORMAT=1
               echo "❌ $file precisa de formatação"
               
@@ -94,7 +82,7 @@ jobs:
               echo "### 📄 \`${file}\`" >> format-report.md
               echo "" >> format-report.md
               echo "<details>" >> format-report.md
-              echo "<summary>Ver alterações sugeridas</summary>" >> format-report.md
+              echo "<summary>🔍 Clica para ver as alterações sugeridas</summary>" >> format-report.md
               echo "" >> format-report.md
               echo "\`\`\`diff" >> format-report.md
               diff -u "$file" "${file}.formatted" >> format-report.md || true
@@ -106,6 +94,8 @@ jobs:
             fi
             
             rm -f "${file}.formatted"
+          else
+            echo "⚠️ Ficheiro não encontrado: $file (pode ter sido eliminado)"
           fi
         done
         
@@ -135,126 +125,49 @@ jobs:
           # Adiciona o relatório detalhado ao Summary
           cat format-report.md >> $GITHUB_STEP_SUMMARY
           
+          echo "❌ Check falhou: ficheiros precisam de formatação"
           exit 1
         else
-          echo "✅ Todos os arquivos estão corretamente formatados" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Formatação Correta" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Todos os ficheiros C/C++ estão corretamente formatados! 🎉" >> $GITHUB_STEP_SUMMARY
         fi
     
-    - name: Ler relatório
+    - name: Comentar no PR
       if: failure()
-      id: read-report
       run: |
+        COMMENT_BODY=$(cat << 'EOF'
+        ## ⚠️ Formatação de Código
+        
+        O clang-format detetou problemas de formatação no teu código.
+        
+        ### 🔧 Como corrigir automaticamente:
+        
+        **Formatar ficheiros específicos:**
+        ```bash
+        clang-format -i caminho/do/ficheiro.c
+        ```
+        
+        **Formatar todos os ficheiros C/C++:**
+        ```bash
+        find . -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
+        ```
+        
+        ---
+        
+        EOF
+        )
+        
+        # Adiciona o conteúdo do relatório
         if [ -f format-report.md ]; then
-          CONTENT=$(cat format-report.md)
-          # Escapa caracteres especiais para usar no GitHub Actions
-          CONTENT="${CONTENT//'%'/'%25'}"
-          CONTENT="${CONTENT//
-    
-    - name: Comentar no PR
-      if: failure()
-      uses: marocchino/sticky-pull-request-comment@v2
-      with:
-        header: clang-format
-        message: |
-          ## ⚠️ Formatação de Código
-          
-          O clang-format detetou problemas de formatação no teu código.
-          
-          ### 🔧 Como corrigir automaticamente:
-          
-          **Formatar ficheiros específicos:**
-          ```bash
-          clang-format -i caminho/do/ficheiro.c
-          ```
-          
-          **Formatar todos os ficheiros C/C++:**
-          ```bash
-          find . -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
-          ```
-          
-          ---
-          
-          ## 📝 Sugestões de Formatação
-          
-          ${{ steps.format-check.outputs.report }}
-          
-          <details>
-          <summary>💡 Ver diff completo no Job Summary</summary>
-          
-          Clica no link do workflow acima para ver as alterações detalhadas no "Summary" do job.
-          </details>
-\n'/'%0A'}"
-          CONTENT="${CONTENT//
-    
-    - name: Comentar no PR
-      if: failure()
-      uses: marocchino/sticky-pull-request-comment@v2
-      with:
-        header: clang-format
-        message: |
-          ## ⚠️ Formatação de Código
-          
-          O clang-format detetou problemas de formatação no teu código.
-          
-          ### 🔧 Como corrigir automaticamente:
-          
-          **Formatar ficheiros específicos:**
-          ```bash
-          clang-format -i caminho/do/ficheiro.c
-          ```
-          
-          **Formatar todos os ficheiros C/C++:**
-          ```bash
-          find . -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
-          ```
-          
-          ---
-          
-          ## 📝 Sugestões de Formatação
-          
-          ${{ steps.format-check.outputs.report }}
-          
-          <details>
-          <summary>💡 Ver diff completo no Job Summary</summary>
-          
-          Clica no link do workflow acima para ver as alterações detalhadas no "Summary" do job.
-          </details>
-\r'/'%0D'}"
-          echo "content=$CONTENT" >> $GITHUB_OUTPUT
-        else
-          echo "content=Não foi possível gerar o relatório." >> $GITHUB_OUTPUT
+          COMMENT_BODY="${COMMENT_BODY}
+$(cat format-report.md)"
         fi
-    
-    - name: Comentar no PR
-      if: failure()
-      uses: marocchino/sticky-pull-request-comment@v2
-      with:
-        header: clang-format
-        message: |
-          ## ⚠️ Formatação de Código
-          
-          O clang-format detetou problemas de formatação no teu código.
-          
-          ### 🔧 Como corrigir automaticamente:
-          
-          **Formatar ficheiros específicos:**
-          ```bash
-          clang-format -i caminho/do/ficheiro.c
-          ```
-          
-          **Formatar todos os ficheiros C/C++:**
-          ```bash
-          find . -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
-          ```
-          
-          ---
-          
-          ## 📝 Sugestões de Formatação
-          
-          ${{ steps.format-check.outputs.report }}
-          
-          <details>
-          <summary>💡 Ver diff completo no Job Summary</summary>
-          
-          Clica no link do workflow acima para ver as alterações detalhadas no "Summary" do job.
-          </details>
+        
+        # Salva o comentário num arquivo temporário
+        echo "$COMMENT_BODY" > comment.md
+        
+        # Usa GitHub CLI para comentar
+        gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md --edit-last || gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md
+      env:
+        GH_TOKEN: ${{ github.token }}
