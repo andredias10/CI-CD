@@ -9,6 +9,11 @@ on:
       - '**.cpp'
       - '**.hpp'
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   clang-format-check:
     runs-on: ubuntu-latest
