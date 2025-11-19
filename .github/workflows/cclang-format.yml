@@ -9,38 +9,41 @@ on:
       - '**/*.hpp'
 
 jobs:
-  format-check:
+  check-format:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout do código
       - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      # 2️⃣ Instalar clang-format
       - name: Install clang-format
         run: |
           sudo apt update
           sudo apt install -y clang-format
 
-      # 3️⃣ Instalar reviewdog (binário)
-      - name: Install reviewdog
-        run: |
-          curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin
-
-      # 4️⃣ Rodar clang-format + reviewdog
-      - name: Run clang-format with reviewdog
+      - name: Run clang-format
         run: |
           FILES=$(git ls-files '*.c' '*.cpp' '*.h' '*.hpp')
           for f in $FILES; do
-            clang-format -style=file "$f" | reviewdog \
-              -f=diff \
-              -name="clang-format" \
-              -reporter=github-pr-review \
-              -level=warning
+            cp "$f" "$f.bak"
+            clang-format -i "$f"
           done
-        shell: bash
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check diff
+        run: |
+          if ! git diff --quiet; then
+            echo "❌ Código não está formatado segundo clang-format."
+            exit 1
+          else
+            echo "✔ Tudo formatado!"
+          fi
+
+      - name: Upload formatted files as suggestions
+        if: failure()
+        uses: reviewdog/action-suggester@v1
+        with:
+          tool_name: clang-format
+          fail_on_error: "false"
+          suggestion_file: "."
