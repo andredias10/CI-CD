@@ -11,50 +11,47 @@ permissions:
 jobs:
   clang-format:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    
+
     - name: Instalar clang-format
       run: sudo apt-get update && sudo apt-get install -y clang-format
-    
-    - name: Verificar formatação
+
+    - name: Criar .clang-format se não existir
       run: |
-        # Criar .clang-format se não existir
         if [ ! -f ".clang-format" ]; then
           cat > .clang-format << EOF
-        BasedOnStyle: LLVM
-        IndentWidth: 4
-        UseTab: Never
-        EOF
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+EOF
         fi
-        
-        # Encontrar ficheiros alterados
+
+    - name: Verificar formatação
+      run: |
         git fetch origin ${{ github.base_ref }}
         FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(c|h|cpp|hpp)$' || true)
-        
+
         if [ -z "$FILES" ]; then
           echo "Nenhum ficheiro C/C++ alterado"
           exit 0
         fi
-        
+
         echo "Ficheiros a verificar:"
         echo "$FILES"
-        
-        # Verificar cada ficheiro
+
         HAS_ISSUES=0
         echo "" > issues.txt
-        
+
         for file in $FILES; do
           if [ -f "$file" ]; then
             echo "Verificando $file..."
             
-            # Formatar e comparar
-            clang-format "$file" > "$file.fmt"
-            
-            if ! diff -u "$file" "$file.fmt" > "$file.diff"; then
+            # Verifica formatação sem alterar o arquivo
+            if ! clang-format -style=file "$file" | diff -u "$file" - > "$file.diff"; then
               HAS_ISSUES=1
               echo "❌ $file tem problemas de formatação"
               
@@ -70,45 +67,21 @@ jobs:
             else
               echo "✅ $file está OK"
             fi
-            
-            rm -f "$file.fmt" "$file.diff"
+
+            rm -f "$file.diff"
           fi
         done
-        
-        # Criar comentário se houver problemas
+
         if [ $HAS_ISSUES -eq 1 ]; then
           cat > comment.md << 'COMMENT'
-        ## ⚠️ Problemas de Formatação Detetados
-        
-        Os seguintes ficheiros não seguem o estilo de formatação:
-        
-        ### Como corrigir:
-        
-        **Opção 1 - Corrigir apenas ficheiros deste PR:**
-        ```bash
-        git diff --name-only origin/main...HEAD | grep -E '\.(c|h|cpp|hpp)$' | xargs clang-format -i
-        ```
-        
-        **Opção 2 - Corrigir todos os ficheiros C/C++ do projeto:**
-        ```bash
-        find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) -exec clang-format -i {} +
-        ```
-        
-        ---
-        
-        COMMENT
-          
-          cat issues.txt >> comment.md
-          
-          # Comentar usando gh cli
-          gh pr comment ${{ github.event.number }} \
-            --body-file comment.md \
-            --edit-last 2>/dev/null || gh pr comment ${{ github.event.number }} --body-file comment.md
-          
-          echo "❌ Formatação incorreta"
-          exit 1
-        fi
-        
-        echo "✅ Todos os ficheiros estão bem formatados"
-      env:
-        GH_TOKEN: ${{ github.token }}
+## ⚠️ Problemas de Formatação Detetados
+
+Os seguintes ficheiros não seguem o estilo de formatação:
+
+### Como corrigir:
+```bash
+# Instalar clang-format se necessário
+sudo apt-get install clang-format
+
+# Corrigir automaticamente
+clang-format -i *.c *.h
