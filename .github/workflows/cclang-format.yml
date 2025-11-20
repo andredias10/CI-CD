@@ -77,48 +77,26 @@ jobs:
         
         # Criar comentário se houver problemas
         if [ $HAS_ISSUES -eq 1 ]; then
-          # Listar ficheiros com problemas para o comando
-          PROBLEM_FILES=$(echo "$FILES" | tr '\n' ' ')
-          
-          cat > comment.md << EOF
+          cat > comment.md << 'COMMENT'
         ## ⚠️ Problemas de Formatação Detetados
         
         Os seguintes ficheiros não seguem o estilo de formatação:
         
         ### Como corrigir:
         
-        **Opção 1 - Corrigir ficheiros específicos:**
-        \`\`\`bash
-        clang-format -i $PROBLEM_FILES
-        \`\`\`
+        **Opção 1 - Corrigir apenas ficheiros deste PR:**
+        ```bash
+        git diff --name-only origin/main...HEAD | grep -E '\.(c|h|cpp|hpp)$' | xargs clang-format -i
+        ```
         
         **Opção 2 - Corrigir todos os ficheiros C/C++ do projeto:**
-        \`\`\`bash
+        ```bash
         find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) -exec clang-format -i {} +
-        \`\`\`
-        
-        **Opção 3 - Corrigir apenas ficheiros alterados neste PR:**
-        \`\`\`bash
-        git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(c|h|cpp|hpp)
-          
-          # Comentar usando gh cli
-          gh pr comment ${{ github.event.number }} \
-            --body-file comment.md \
-            --edit-last 2>/dev/null || gh pr comment ${{ github.event.number }} --body-file comment.md
-          
-          echo "❌ Formatação incorreta"
-          exit 1
-        fi
-        
-        echo "✅ Todos os ficheiros estão bem formatados"
-      env:
-        GH_TOKEN: ${{ github.token }}
- | xargs clang-format -i
-        \`\`\`
+        ```
         
         ---
         
-        EOF
+        COMMENT
           
           cat issues.txt >> comment.md
           
