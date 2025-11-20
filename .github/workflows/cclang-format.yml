@@ -86,12 +86,33 @@ jobs:
         
         **Opção 1 - Corrigir apenas ficheiros deste PR:**
         ```bash
-        git diff --name-only origin/main...HEAD | grep -E '\.(c|h|cpp|hpp)$' | xargs clang-format -i
+        git diff --name-only origin/main...HEAD | grep -E '\.(c|h|cpp|hpp)
+          
+          cat issues.txt >> comment.md
+          
+          # Comentar usando gh cli
+          gh pr comment ${{ github.event.number }} \
+            --body-file comment.md \
+            --edit-last 2>/dev/null || gh pr comment ${{ github.event.number }} --body-file comment.md
+          
+          echo "❌ Formatação incorreta"
+          exit 1
+        fi
+        
+        echo "✅ Todos os ficheiros estão bem formatados"
+      env:
+        GH_TOKEN: ${{ github.token }}
+ | xargs -r clang-format -i
         ```
         
         **Opção 2 - Corrigir todos os ficheiros C/C++ do projeto:**
         ```bash
         find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) -exec clang-format -i {} +
+        ```
+        
+        **Opção 3 - Corrigir ficheiro a ficheiro:**
+        ```bash
+        clang-format -i caminho/do/ficheiro.c
         ```
         
         ---
