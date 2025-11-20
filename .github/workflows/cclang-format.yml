@@ -75,8 +75,9 @@ jobs:
           fi
         done
         
-        # Criar comentário se houver problemas
+        # Criar comentários se houver problemas
         if [ $HAS_ISSUES -eq 1 ]; then
+          # Comentário geral
           cat > comment.md << 'COMMENT'
         ## ⚠️ Problemas de Formatação Detetados
         
