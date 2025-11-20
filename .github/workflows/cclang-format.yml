@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  checks: write
 
 jobs:
   clang-format:
@@ -17,96 +18,10 @@ jobs:
       with:
         fetch-depth: 0
     
-    - name: Instalar clang-format
-      run: sudo apt-get update && sudo apt-get install -y clang-format
-    
-    - name: Verificar formatação
-      run: |
-        # Criar .clang-format se não existir
-        if [ ! -f ".clang-format" ]; then
-          cat > .clang-format << EOF
-        BasedOnStyle: LLVM
-        IndentWidth: 4
-        UseTab: Never
-        EOF
-        fi
-        
-        # Encontrar ficheiros alterados
-        git fetch origin ${{ github.base_ref }}
-        FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(c|h|cpp|hpp)$' || true)
-        
-        if [ -z "$FILES" ]; then
-          echo "Nenhum ficheiro C/C++ alterado"
-          exit 0
-        fi
-        
-        echo "Ficheiros a verificar:"
-        echo "$FILES"
-        
-        # Verificar cada ficheiro
-        HAS_ISSUES=0
-        echo "" > issues.txt
-        
-        for file in $FILES; do
-          if [ -f "$file" ]; then
-            echo "Verificando $file..."
-            
-            # Formatar e comparar
-            clang-format "$file" > "$file.fmt"
-            
-            if ! diff -u "$file" "$file.fmt" > "$file.diff"; then
-              HAS_ISSUES=1
-              echo "❌ $file tem problemas de formatação"
-              
-              echo "### 📄 \`$file\`" >> issues.txt
-              echo "" >> issues.txt
-              echo "<details><summary>Ver diferenças</summary>" >> issues.txt
-              echo "" >> issues.txt
-              echo '```diff' >> issues.txt
-              cat "$file.diff" >> issues.txt
-              echo '```' >> issues.txt
-              echo "</details>" >> issues.txt
-              echo "" >> issues.txt
-            else
-              echo "✅ $file está OK"
-            fi
-            
-            rm -f "$file.fmt" "$file.diff"
-          fi
-        done
-        
-        # Criar comentários se houver problemas
-        if [ $HAS_ISSUES -eq 1 ]; then
-          # Comentário geral
-          cat > comment.md << 'COMMENT'
-        ## ⚠️ Problemas de Formatação Detetados
-        
-        Os seguintes ficheiros não seguem o estilo de formatação:
-        
-        ### Como corrigir:
-        ```bash
-        # Instalar clang-format se necessário
-        sudo apt-get install clang-format
-        
-        # Corrigir automaticamente
-        clang-format -i *.c *.h
-        ```
-        
-        ---
-        
-        COMMENT
-          
-          cat issues.txt >> comment.md
-          
-          # Comentar usando gh cli
-          gh pr comment ${{ github.event.number }} \
-            --body-file comment.md \
-            --edit-last 2>/dev/null || gh pr comment ${{ github.event.number }} --body-file comment.md
-          
-          echo "❌ Formatação incorreta"
-          exit 1
-        fi
-        
-        echo "✅ Todos os ficheiros estão bem formatados"
-      env:
-        GH_TOKEN: ${{ github.token }}
+    - name: Executar clang-format com reviewdog
+      uses: reviewdog/action-clang-format@v1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        reporter: github-pr-review
+        level: warning
+        clang_format_version: "18"
